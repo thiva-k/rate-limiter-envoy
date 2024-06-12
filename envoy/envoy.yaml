@@ -32,13 +32,9 @@ static_resources:
                           handle:logInfo("Lua filter: onRequest called")
                           local headers = {
                             [":method"] = "GET",                    -- Set the HTTP method
-                            [":path"] = "/",            -- Set the path
-                            [":authority"] = "node",               -- Set the authority
-                            ["custom-header"] = "value"            -- Add custom headers if needed
+                            [":path"] = "/",                        -- Set the path
+                            [":authority"] = "envoy",               -- Set the authority
                           }
-
-                          local body = ""  -- Optional body data
-                          local timeout_ms = 1000  -- Timeout in milliseconds
 
                           -- Make the HTTP call synchronously
                           local response_headers, response_body = handle:httpCall("node_cluster", headers, body,5000)
