@@ -1,0 +1,84 @@
+static_resources:
+  listeners:
+    - name: main
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                codec_type: AUTO
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains:
+                        - "*"
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: web_service
+                http_filters:
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(handle)
+                          handle:logInfo("Lua filter: onRequest called")
+                          local headers = {
+                            [":method"] = "GET",                    -- Set the HTTP method
+                            [":path"] = "/",            -- Set the path
+                            [":authority"] = "node",               -- Set the authority
+                            ["custom-header"] = "value"            -- Add custom headers if needed
+                          }
+
+                          local body = ""  -- Optional body data
+                          local timeout_ms = 1000  -- Timeout in milliseconds
+
+                          -- Make the HTTP call synchronously
+                          local response_headers, response_body = handle:httpCall("node_cluster", headers, body,5000)
+
+                          -- Check if the call was successful
+                          if response_headers then
+                            -- Process the response headers and body
+                            handle:logInfo("HTTP call succeeded")
+                            handle:logInfo("Response body: " .. response_body)
+                          else
+                            -- Handle the case when the call failed
+                            handle:logWarn("HTTP call failed")
+                          end
+                        end
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: node_cluster
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: node_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: node
+                      port_value: 3000
+    - name: web_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: web_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: webui
+                      port_value: 8080
