@@ -30,15 +30,28 @@ static_resources:
                       inline_code: |
                         function envoy_on_request(request_handle)
                           request_handle:logInfo("Lua filter: onRequest called")
-                          local remote_address = request_handle:streamInfo():downstreamDirectRemoteAddress()
+                          local token = ""
                           local path = request_handle:headers():get(":path")
 
-                          if path == "/" then
+                          -- Extracting query parameters
+                          if path then
+                            for key, value in string.gmatch(path, "([^&=?]+)=([^&=?]+)") do
+                              if key == "token" then
+                                token = value
+                              end
+                            end
+                          end
+
+                          -- Log the token value
+                          request_handle:logInfo("Token: " .. token)
+
+                          -- Check if path is "/" or "/?..." format
+                          if path == "/" or string.match(path, "^/$?%?") then
                             -- Fetch current rate limit count
                             local fetch_headers = {
                               [":method"] = "GET",
                               [":path"] = "/rate-limit",
-                              ["remote_address"] = remote_address,
+                              ["token"] = token,
                               [":authority"] = "node"
                             }
                             local fetch_response_headers, fetch_response_body = request_handle:httpCall(
@@ -49,10 +62,10 @@ static_resources:
                             )
 
                             local count = tonumber(fetch_response_body)
-                            request_handle:logInfo("Current rate limit count for " .. remote_address .. " is " .. count)
+                            request_handle:logInfo("Current rate limit count for token " .. token .. " is " .. count)
 
                             if count >= 5 then
-                              request_handle:logInfo("Rate limit exceeded for " .. remote_address)
+                              request_handle:logInfo("Rate limit exceeded for token " .. token)
                               request_handle:respond(
                                 {
                                   [":status"] = "429",
@@ -65,7 +78,7 @@ static_resources:
                               local update_headers = {
                                 [":method"] = "POST",
                                 [":path"] = "/rate-limit",
-                                ["remote_address"] = remote_address,
+                                ["token"] = token,
                                 [":authority"] = "node",
                                 ["x-rate-limit-count"] = tostring(count)
                               }
@@ -76,7 +89,7 @@ static_resources:
                                 "",
                                 5000
                               )
-                              request_handle:logInfo("Rate limit incremented for " .. remote_address)
+                              request_handle:logInfo("Rate limit incremented for token " .. token)
                             end
                           else
                             request_handle:logInfo("Skipping rate limit for path: " .. path)
