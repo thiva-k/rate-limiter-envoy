@@ -46,7 +46,8 @@ app.get('/rate-limit', (req, res) => {
 // Endpoint to update rate limit count
 app.post('/rate-limit', (req, res) => {
   const token = req.get('token');
-  const newCount = parseInt(req.get('x-rate-limit-count'), 10);
+  const newCount = parseInt(req.body.count, 10);
+  console.log("From Express", "Token ",token, "Count ", newCount)
   const expireTime = 60; // Expiry time in seconds
 
   // Delete expired rate limits before updating the count

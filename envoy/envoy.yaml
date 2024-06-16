@@ -51,8 +51,8 @@ static_resources:
                             local fetch_headers = {
                               [":method"] = "GET",
                               [":path"] = "/rate-limit",
-                              ["token"] = token,
-                              [":authority"] = "node"
+                              [":authority"] = "node",
+                              ["token"] = token
                             }
                             local fetch_response_headers, fetch_response_body = request_handle:httpCall(
                               "node_cluster",
@@ -75,18 +75,19 @@ static_resources:
                               )
                             else
                               count = count + 1  -- Increment the rate limit count
+                              local update_body = "count=" .. count
                               local update_headers = {
                                 [":method"] = "POST",
                                 [":path"] = "/rate-limit",
-                                ["token"] = token,
                                 [":authority"] = "node",
-                                ["x-rate-limit-count"] = tostring(count)
+                                ["content-type"] = "application/x-www-form-urlencoded",
+                                ["token"] = token
                               }
                               
                               local update_response_headers, update_response_body = request_handle:httpCall(
                                 "node_cluster",
                                 update_headers,
-                                "",
+                                update_body,
                                 5000
                               )
                               request_handle:logInfo("Rate limit incremented for token " .. token)
