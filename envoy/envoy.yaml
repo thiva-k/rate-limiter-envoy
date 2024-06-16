@@ -28,25 +28,58 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       inline_code: |
-                        function envoy_on_request(handle)
-                          handle:logInfo("Lua filter: onRequest called")
-                          local headers = {
-                            [":method"] = "GET",                    -- Set the HTTP method
-                            [":path"] = "/",                        -- Set the path
-                            [":authority"] = "envoy",               -- Set the authority
-                          }
+                        function envoy_on_request(request_handle)
+                          request_handle:logInfo("Lua filter: onRequest called")
+                          local remote_address = request_handle:streamInfo():downstreamDirectRemoteAddress()
+                          local path = request_handle:headers():get(":path")
 
-                          -- Make the HTTP call synchronously
-                          local response_headers, response_body = handle:httpCall("node_cluster", headers, body,5000)
+                          if path == "/" then
+                            -- Fetch current rate limit count
+                            local fetch_headers = {
+                              [":method"] = "GET",
+                              [":path"] = "/rate-limit",
+                              ["remote_address"] = remote_address,
+                              [":authority"] = "node"
+                            }
+                            local fetch_response_headers, fetch_response_body = request_handle:httpCall(
+                              "node_cluster",
+                              fetch_headers,
+                              "",
+                              5000
+                            )
 
-                          -- Check if the call was successful
-                          if response_headers then
-                            -- Process the response headers and body
-                            handle:logInfo("HTTP call succeeded")
-                            handle:logInfo("Response body: " .. response_body)
+                            local count = tonumber(fetch_response_body)
+                            request_handle:logInfo("Current rate limit count for " .. remote_address .. " is " .. count)
+
+                            if count >= 5 then
+                              request_handle:logInfo("Rate limit exceeded for " .. remote_address)
+                              request_handle:respond(
+                                {
+                                  [":status"] = "429",
+                                  ["content-type"] = "text/plain"
+                                },
+                                "Rate limit exceeded"
+                              )
+                            else
+                              count = count + 1  -- Increment the rate limit count
+                              local update_headers = {
+                                [":method"] = "POST",
+                                [":path"] = "/rate-limit",
+                                ["remote_address"] = remote_address,
+                                [":authority"] = "node",
+                                ["x-rate-limit-count"] = tostring(count)
+                              }
+                              
+                              local update_response_headers, update_response_body = request_handle:httpCall(
+                                "node_cluster",
+                                update_headers,
+                                "",
+                                5000
+                              )
+                              request_handle:logInfo("Rate limit incremented for " .. remote_address)
+                            end
                           else
-                            -- Handle the case when the call failed
-                            handle:logWarn("HTTP call failed")
+                            request_handle:logInfo("Skipping rate limit for path: " .. path)
                           end
                         end
                   - name: envoy.filters.http.router
@@ -78,3 +111,16 @@ static_resources:
                     socket_address:
                       address: webui
                       port_value: 8080
+
+    - name: httpbin_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: httpbin_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: httpbin
+                      port_value: 80

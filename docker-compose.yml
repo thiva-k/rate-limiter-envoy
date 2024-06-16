@@ -13,6 +13,19 @@ services:
     depends_on:
       - node
 
+  envoy2:
+    image: envoyproxy/envoy:v1.22.0
+    volumes:
+      - ./envoy:/etc/envoy
+    networks:
+      - rate_limit_network
+    expose:
+      - "8000"
+    ports:
+      - "8001:8000"
+    depends_on:
+      - node
+
   node:
     build:
       context: node
@@ -22,6 +35,22 @@ services:
       - "3000"
     ports:
       - "3000:3000"
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: password  # Change to your actual MySQL root password
+      MYSQL_DATABASE: rate_limiter
+    expose:
+      - "3306"
+    ports:
+      - "3307:3306"
+    networks:
+      - rate_limit_network
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
   registry:
     image: descartesresearch/teastore-registry
@@ -102,6 +131,13 @@ services:
       REGISTRY_HOST: "registry"
     networks:
       - rate_limit_network
+  
+  httpbin:
+    image: kennethreitz/httpbin
+    networks:
+      - rate_limit_network
+    expose:
+      - "80"
 
 networks:
   rate_limit_network:
