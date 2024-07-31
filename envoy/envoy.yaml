@@ -20,7 +20,7 @@ static_resources:
                         - "*"
                       routes:
                         - match:
-                            prefix: "/"
+                            prefix: "/tools.descartes.teastore.auth/rest/ready/isready"
                           route:
                             cluster: web_service
                 http_filters:
@@ -45,55 +45,50 @@ static_resources:
                           -- Log the token value
                           request_handle:logInfo("Token: " .. token)
 
-                          -- Check if path is "/" or "/?..." format
-                          if path == "/" or string.match(path, "^/$?%?") then
-                            -- Fetch current rate limit count
-                            local fetch_headers = {
-                              [":method"] = "GET",
+                          -- Fetch current rate limit count
+                          local fetch_headers = {
+                            [":method"] = "GET",
+                            [":path"] = "/rate-limit",
+                            [":authority"] = "node",
+                            ["token"] = token
+                          }
+                          local fetch_response_headers, fetch_response_body = request_handle:httpCall(
+                            "node_cluster",
+                            fetch_headers,
+                            "",
+                            5000
+                          )
+
+                          local count = tonumber(fetch_response_body)
+                          request_handle:logInfo("Current rate limit count for token " .. token .. " is " .. count)
+
+                          if count >= 500 then
+                            request_handle:logInfo("Rate limit exceeded for token " .. token)
+                            request_handle:respond(
+                              {
+                                [":status"] = "429",
+                                ["content-type"] = "text/plain"
+                              },
+                              "Rate limit exceeded"
+                            )
+                          else
+                            count = count + 1  -- Increment the rate limit count
+                            local update_body = "count=" .. count
+                            local update_headers = {
+                              [":method"] = "POST",
                               [":path"] = "/rate-limit",
                               [":authority"] = "node",
+                              ["content-type"] = "application/x-www-form-urlencoded",
                               ["token"] = token
                             }
-                            local fetch_response_headers, fetch_response_body = request_handle:httpCall(
+                            
+                            local update_response_headers, update_response_body = request_handle:httpCall(
                               "node_cluster",
-                              fetch_headers,
-                              "",
+                              update_headers,
+                              update_body,
                               5000
                             )
-
-                            local count = tonumber(fetch_response_body)
-                            request_handle:logInfo("Current rate limit count for token " .. token .. " is " .. count)
-
-                            if count >= 5 then
-                              request_handle:logInfo("Rate limit exceeded for token " .. token)
-                              request_handle:respond(
-                                {
-                                  [":status"] = "429",
-                                  ["content-type"] = "text/plain"
-                                },
-                                "Rate limit exceeded"
-                              )
-                            else
-                              count = count + 1  -- Increment the rate limit count
-                              local update_body = "count=" .. count
-                              local update_headers = {
-                                [":method"] = "POST",
-                                [":path"] = "/rate-limit",
-                                [":authority"] = "node",
-                                ["content-type"] = "application/x-www-form-urlencoded",
-                                ["token"] = token
-                              }
-                              
-                              local update_response_headers, update_response_body = request_handle:httpCall(
-                                "node_cluster",
-                                update_headers,
-                                update_body,
-                                5000
-                              )
-                              request_handle:logInfo("Rate limit incremented for token " .. token)
-                            end
-                          else
-                            request_handle:logInfo("Skipping rate limit for path: " .. path)
+                            request_handle:logInfo("Rate limit incremented for token " .. token)
                           end
                         end
                   - name: envoy.filters.http.router
@@ -123,18 +118,5 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: webui
+                      address: auth
                       port_value: 8080
-
-    - name: httpbin_service
-      type: STRICT_DNS
-      lb_policy: ROUND_ROBIN
-      load_assignment:
-        cluster_name: httpbin_service
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: httpbin
-                      port_value: 80

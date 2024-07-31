@@ -85,7 +85,7 @@ services:
       - rate_limit_network
 
   auth:
-    image: descartesresearch/teastore-auth
+    image: thiva-auth:latest
     expose:
       - "8080"
     ports:
@@ -93,6 +93,10 @@ services:
     environment:
       HOST_NAME: "auth"
       REGISTRY_HOST: "registry"
+      LOG_TO_FILE: "true"
+      LOG_PARAMETERS: "true"
+    volumes:
+      - ./logs/auth:/kieker/logs/
     networks:
       - rate_limit_network
 
@@ -131,13 +135,6 @@ services:
       REGISTRY_HOST: "registry"
     networks:
       - rate_limit_network
-  
-  httpbin:
-    image: kennethreitz/httpbin
-    networks:
-      - rate_limit_network
-    expose:
-      - "80"
 
 networks:
   rate_limit_network:
